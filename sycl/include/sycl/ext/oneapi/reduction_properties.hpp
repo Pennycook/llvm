@@ -45,6 +45,32 @@ template <> struct PropertyToKind<initialize_to_identity_key> {
   static constexpr PropKind Kind = PropKind::InitializeToIdentity;
 };
 
+template <typename BinaryOperation>
+struct DeterministicOperatorWrapper {
+
+  DeterministicOperatorWrapper(BinaryOperation BinOp) : BinOp(BinOp) {}
+
+  template <typename... Args>
+  typename std::result_of<Fn(Args...)>::type
+  operator()(Args... args) {
+    return BinOp(std::forward<Args>(args)...);
+  }
+
+  BinaryOperation& BinOp;
+
+};
+
+#ifdef SYCL_DETERMINISTIC_REDUCTION
+// Act as if all operators require determinism.
+template <typename T> struct IsDeterministicOperator<> : std::true_type {};
+#else
+// Each operator declares whether determinism is required.
+template <typename T> struct IsDeterministicOperator<> : std::false_type {};
+
+template <typename BinaryOperation>
+struct IsDeterministicOperator<DeterministicOperatorWrapper<BinaryOperation>> : std::true_type {};
+#endif
+
 } // namespace detail
 
 } // namespace experimental

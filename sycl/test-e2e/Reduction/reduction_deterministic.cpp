@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <random>
 
 #include <sycl/sycl.hpp>
 
@@ -26,6 +27,13 @@ int main(int argc, char* argv[]) {
 
   constexpr size_t N = 1024;
   float* array = new float[N];
+
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+  std::generate(array, array + N, [&]() {
+    return dist(gen);
+  });
 
   sycl::queue q;
   float x = sum(q, array, N);

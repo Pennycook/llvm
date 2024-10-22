@@ -51,7 +51,7 @@ struct DeterministicOperatorWrapper {
   DeterministicOperatorWrapper(BinaryOperation BinOp) : BinOp(BinOp) {}
 
   template <typename... Args>
-  typename std::result_of<Fn(Args...)>::type
+  std::invoke_result_t<BinaryOperation, Args...>
   operator()(Args... args) {
     return BinOp(std::forward<Args>(args)...);
   }
@@ -62,10 +62,10 @@ struct DeterministicOperatorWrapper {
 
 #ifdef SYCL_DETERMINISTIC_REDUCTION
 // Act as if all operators require determinism.
-template <typename T> struct IsDeterministicOperator<> : std::true_type {};
+template <typename T> struct IsDeterministicOperator : std::true_type {};
 #else
 // Each operator declares whether determinism is required.
-template <typename T> struct IsDeterministicOperator<> : std::false_type {};
+template <typename T> struct IsDeterministicOperator : std::false_type {};
 
 template <typename BinaryOperation>
 struct IsDeterministicOperator<DeterministicOperatorWrapper<BinaryOperation>> : std::true_type {};

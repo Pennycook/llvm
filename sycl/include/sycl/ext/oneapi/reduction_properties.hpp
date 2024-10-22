@@ -74,7 +74,7 @@ namespace detail {
 template <typename BinaryOperation>
 struct DeterministicOperatorWrapper {
 
-  DeterministicOperatorWrapper(BinaryOperation BinOp) : BinOp(BinOp) {}
+  DeterministicOperatorWrapper(BinaryOperation BinOp = BinaryOperation()) : BinOp(BinOp) {}
 
   template <typename... Args>
   std::invoke_result_t<BinaryOperation, Args...>
@@ -82,7 +82,7 @@ struct DeterministicOperatorWrapper {
     return BinOp(std::forward<Args>(args)...);
   }
 
-  BinaryOperation& BinOp;
+  BinaryOperation BinOp;
 
 };
 

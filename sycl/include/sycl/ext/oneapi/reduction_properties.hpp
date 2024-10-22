@@ -65,7 +65,9 @@ auto WrapOp(BinaryOperation combiner, PropertyList properties) {
   if constexpr (properties.template has_property<deterministic_key>()) {
     return DeterministicOperatorWrapper(combiner);
   }
-  return combiner;
+  else {
+    return combiner;
+  }
 }
 
 template <typename PropertyList>

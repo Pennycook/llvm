@@ -71,10 +71,56 @@ template <typename BinaryOperation>
 struct IsDeterministicOperator<DeterministicOperatorWrapper<BinaryOperation>> : std::true_type {};
 #endif
 
+template <typename BinaryOperation, typename PropertyList>
+auto WrapOp(BinaryOperation combiner, PropertyList properties) {
+  if constexpr (properties.template has_property<deterministic_key>()) {
+    return DeterministicOperatorWrapper(combiner);
+  }
+  return combiner;
+}
+
+template <typename PropertyList>
+property_list GetReductionPropertyList(PropertyList properties) {
+  if constexpr (properties.template has_property<initialize_to_identity_key>()) {
+    return sycl::property::reduction::initialize_to_identity{};
+  }
+  return {};
+}
+
 } // namespace detail
 
 } // namespace experimental
 } // namespace oneapi
 } // namespace ext
+
+
+template <typename BufferT, typename BinaryOperation, typename PropertyList>
+auto reduction(BufferT vars, handler& cgh, BinaryOperation combiner,
+               PropertyList properties) {
+  auto WrappedOp = ext::oneapi::experimental::detail::WrapOp(combiner, properties);
+  auto RuntimeProps = ext::oneapi::experimental::detail::GetReductionPropertyList(properties);
+  return reduction(vars, cgh, WrappedOp, RuntimeProps);
+}
+
+#if 0
+template <typename T, typename BinaryOperation, typename PropertyList>
+__unspecified__ reduction(T* var, BinaryOperation combiner,
+                          PropertyList properties);
+template <typename T, typename Extent, typename BinaryOperation, typename PropertyList>
+__unspecified__ reduction(span<T, Extent> vars, BinaryOperation combiner,
+                          PropertyList properties);
+template <typename BufferT, typename BinaryOperation, typename PropertyList>
+__unspecified__
+reduction(BufferT vars, handler& cgh, const BufferT::value_type& identity,
+          BinaryOperation combiner, PropertyList properties);
+template <typename T, typename BinaryOperation, typename PropertyList>
+__unspecified__ reduction(T* var, const T& identity, BinaryOperation combiner,
+                          PropertyList properties);
+template <typename T, typename Extent, typename BinaryOperation, typename PropertyList>
+__unspecified__ reduction(span<T, Extent> vars, const T& identity,
+                          BinaryOperation combiner,
+                          PropertyList properties);
+#endif
+
 } // namespace _V1
 } // namespace sycl

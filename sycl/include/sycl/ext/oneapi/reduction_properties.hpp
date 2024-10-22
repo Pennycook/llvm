@@ -60,17 +60,6 @@ struct DeterministicOperatorWrapper {
 
 };
 
-#ifdef SYCL_DETERMINISTIC_REDUCTION
-// Act as if all operators require determinism.
-template <typename T> struct IsDeterministicOperator : std::true_type {};
-#else
-// Each operator declares whether determinism is required.
-template <typename T> struct IsDeterministicOperator : std::false_type {};
-
-template <typename BinaryOperation>
-struct IsDeterministicOperator<DeterministicOperatorWrapper<BinaryOperation>> : std::true_type {};
-#endif
-
 template <typename BinaryOperation, typename PropertyList>
 auto WrapOp(BinaryOperation combiner, PropertyList properties) {
   if constexpr (properties.template has_property<deterministic_key>()) {
@@ -93,6 +82,12 @@ property_list GetReductionPropertyList(PropertyList properties) {
 } // namespace oneapi
 } // namespace ext
 
+namespace detail {
+
+template <typename BinaryOperation>
+struct IsDeterministicOperator<ext::oneapi::experimental::detail::DeterministicOperatorWrapper<BinaryOperation>> : std::true_type {};
+
+} // namespace detail
 
 template <typename BufferT, typename BinaryOperation, typename PropertyList>
 auto reduction(BufferT vars, handler& cgh, BinaryOperation combiner,

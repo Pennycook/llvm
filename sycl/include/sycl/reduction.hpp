@@ -78,9 +78,13 @@ class reducer;
 
 namespace detail {
 
-// Forward declaration for deterministic reduction.
-template <typename BinaryOperation>
-struct IsDeterministicOperator;
+#ifdef SYCL_DETERMINISTIC_REDUCTION
+// Act as if all operators require determinism.
+template <typename T> struct IsDeterministicOperator : std::true_type {};
+#else
+// Each operator declares whether determinism is required.
+template <typename T> struct IsDeterministicOperator : std::false_type {};
+#endif
 
 // This type trait is used to detect if the atomic operation BinaryOperation
 // used with operands of the type T is available for using in reduction.

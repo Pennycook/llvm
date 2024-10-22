@@ -6,27 +6,27 @@
 
 namespace syclex = sycl::ext::oneapi::experimental;
 
-int sum(sycl::queue q, int* input, size_t N) {
+int sum(sycl::queue q, int *input, size_t N) {
 
   int result = 42;
   {
     sycl::buffer<int> buf{&result, 1};
 
-    q.submit([&](sycl::handler& h) {
-      auto reduction = sycl::reduction(buf, h, sycl::plus<>(), syclex::properties(syclex::initialize_to_identity));
-      h.parallel_for(N, reduction, [=](size_t i, auto& reducer) {
-        reducer += input[i];
-      });
+    q.submit([&](sycl::handler &h) {
+      auto reduction =
+          sycl::reduction(buf, h, sycl::plus<>(),
+                          syclex::properties(syclex::initialize_to_identity));
+      h.parallel_for(N, reduction,
+                     [=](size_t i, auto &reducer) { reducer += input[i]; });
     });
   }
   return result;
-
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
 
   constexpr size_t N = 32;
-  int* array = new int[N];
+  int *array = new int[N];
   std::iota(array, array + N, 1);
 
   sycl::queue q;

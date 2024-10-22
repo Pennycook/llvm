@@ -26,11 +26,9 @@ inline namespace _V1 {
 namespace detail {
 
 // Forward declaration for deterministic reductions.
-template <typename BinaryOperation>
-struct DeterministicOperatorWrapper;
+template <typename BinaryOperation> struct DeterministicOperatorWrapper;
 
-template <typename T, typename U>
-struct is_like : public std::is_same<T, U> {};
+template <typename T, typename U> struct is_like : public std::is_same<T, U> {};
 
 template <typename T, typename U>
 constexpr bool is_like_v = is_like<T, U>::value;
@@ -42,9 +40,8 @@ template <typename T, typename U>
 struct is_like<T, DeterministicOperatorWrapper<U>> : std::is_same<T, U> {};
 
 template <typename T, class BinaryOperation>
-using IsPlus =
-    std::bool_constant<is_like_v<BinaryOperation, sycl::plus<T>> ||
-                       is_like_v<BinaryOperation, sycl::plus<void>>>;
+using IsPlus = std::bool_constant<is_like_v<BinaryOperation, sycl::plus<T>> ||
+                                  is_like_v<BinaryOperation, sycl::plus<void>>>;
 
 template <typename T, class BinaryOperation>
 using IsMultiplies =
@@ -77,11 +74,11 @@ using IsBitXOR =
                        is_like_v<BinaryOperation, sycl::bit_xor<void>>>;
 
 template <typename T, class BinaryOperation>
-using IsLogicalAND = std::bool_constant<
-    is_like_v<BinaryOperation, std::logical_and<T>> ||
-    is_like_v<BinaryOperation, std::logical_and<void>> ||
-    is_like_v<BinaryOperation, sycl::logical_and<T>> ||
-    is_like_v<BinaryOperation, sycl::logical_and<void>>>;
+using IsLogicalAND =
+    std::bool_constant<is_like_v<BinaryOperation, std::logical_and<T>> ||
+                       is_like_v<BinaryOperation, std::logical_and<void>> ||
+                       is_like_v<BinaryOperation, sycl::logical_and<T>> ||
+                       is_like_v<BinaryOperation, sycl::logical_and<void>>>;
 
 template <typename T, class BinaryOperation>
 using IsLogicalOR =

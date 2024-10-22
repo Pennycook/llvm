@@ -45,9 +45,16 @@ template <> struct PropertyToKind<initialize_to_identity_key> {
   static constexpr PropKind Kind = PropKind::InitializeToIdentity;
 };
 
+} // namespace detail
+} // namespace experimental
+} // namespace oneapi
+} // namespace ext
+
+namespace detail {
+
 template <typename BinaryOperation, typename PropertyList>
 auto WrapOp(BinaryOperation combiner, PropertyList properties) {
-  if constexpr (properties.template has_property<deterministic_key>()) {
+  if constexpr (properties.template has_property<ext::oneapi::experimental::deterministic_key>()) {
     return DeterministicOperatorWrapper(combiner);
   }
   else {
@@ -57,19 +64,11 @@ auto WrapOp(BinaryOperation combiner, PropertyList properties) {
 
 template <typename PropertyList>
 property_list GetReductionPropertyList(PropertyList properties) {
-  if constexpr (properties.template has_property<initialize_to_identity_key>()) {
+  if constexpr (properties.template has_property<ext::oneapi::experimental::initialize_to_identity_key>()) {
     return sycl::property::reduction::initialize_to_identity{};
   }
   return {};
 }
-
-} // namespace detail
-
-} // namespace experimental
-} // namespace oneapi
-} // namespace ext
-
-namespace detail {
 
 template <typename BinaryOperation>
 struct DeterministicOperatorWrapper {
@@ -94,30 +93,48 @@ struct IsDeterministicOperator<DeterministicOperatorWrapper<BinaryOperation>> : 
 template <typename BufferT, typename BinaryOperation, typename PropertyList>
 auto reduction(BufferT vars, handler& cgh, BinaryOperation combiner,
                PropertyList properties) {
-  auto WrappedOp = ext::oneapi::experimental::detail::WrapOp(combiner, properties);
-  auto RuntimeProps = ext::oneapi::experimental::detail::GetReductionPropertyList(properties);
+  auto WrappedOp = detail::WrapOp(combiner, properties);
+  auto RuntimeProps = detail::GetReductionPropertyList(properties);
   return reduction(vars, cgh, WrappedOp, RuntimeProps);
 }
 
-#if 0
 template <typename T, typename BinaryOperation, typename PropertyList>
-__unspecified__ reduction(T* var, BinaryOperation combiner,
-                          PropertyList properties);
-template <typename T, typename Extent, typename BinaryOperation, typename PropertyList>
-__unspecified__ reduction(span<T, Extent> vars, BinaryOperation combiner,
-                          PropertyList properties);
+auto reduction(T* var, BinaryOperation combiner, PropertyList properties) {
+  auto WrappedOp = detail::WrapOp(combiner, properties);
+  auto RuntimeProps = detail::GetReductionPropertyList(properties);
+  return reduction(var, WrappedOp, RuntimeProps);
+}
+
+template <typename T, size_t Extent, typename BinaryOperation, typename PropertyList>
+auto reduction(span<T, Extent> vars, BinaryOperation combiner, PropertyList properties) {
+  auto WrappedOp = detail::WrapOp(combiner, properties);
+  auto RuntimeProps = detail::GetReductionPropertyList(properties);
+  return reduction(vars, WrappedOp, RuntimeProps);
+}
+
 template <typename BufferT, typename BinaryOperation, typename PropertyList>
-__unspecified__
-reduction(BufferT vars, handler& cgh, const BufferT::value_type& identity,
-          BinaryOperation combiner, PropertyList properties);
+auto reduction(BufferT vars, handler& cgh, const typename BufferT::value_type& identity,
+               BinaryOperation combiner, PropertyList properties) {
+  auto WrappedOp = detail::WrapOp(combiner, properties);
+  auto RuntimeProps = detail::GetReductionPropertyList(properties);
+  return reduction(vars, cgh, identity, WrappedOp, RuntimeProps);
+}
+
 template <typename T, typename BinaryOperation, typename PropertyList>
-__unspecified__ reduction(T* var, const T& identity, BinaryOperation combiner,
-                          PropertyList properties);
-template <typename T, typename Extent, typename BinaryOperation, typename PropertyList>
-__unspecified__ reduction(span<T, Extent> vars, const T& identity,
-                          BinaryOperation combiner,
-                          PropertyList properties);
-#endif
+auto reduction(T* var, const T& identity, BinaryOperation combiner, PropertyList properties) {
+  auto WrappedOp = detail::WrapOp(combiner, properties);
+  auto RuntimeProps = detail::GetReductionPropertyList(properties);
+  return reduction(var, identity, WrappedOp, RuntimeProps);
+}
+
+template <typename T, size_t Extent, typename BinaryOperation, typename PropertyList>
+auto reduction(span<T, Extent> vars, const T& identity,
+               BinaryOperation combiner,
+               PropertyList properties) {
+  auto WrappedOp = detail::WrapOp(combiner, properties);
+  auto RuntimeProps = detail::GetReductionPropertyList(properties);
+  return reduction(vars, identity, WrappedOp, RuntimeProps);
+}
 
 } // namespace _V1
 } // namespace sycl

@@ -45,21 +45,6 @@ template <> struct PropertyToKind<initialize_to_identity_key> {
   static constexpr PropKind Kind = PropKind::InitializeToIdentity;
 };
 
-template <typename BinaryOperation>
-struct DeterministicOperatorWrapper {
-
-  DeterministicOperatorWrapper(BinaryOperation BinOp) : BinOp(BinOp) {}
-
-  template <typename... Args>
-  std::invoke_result_t<BinaryOperation, Args...>
-  operator()(Args... args) {
-    return BinOp(std::forward<Args>(args)...);
-  }
-
-  BinaryOperation& BinOp;
-
-};
-
 template <typename BinaryOperation, typename PropertyList>
 auto WrapOp(BinaryOperation combiner, PropertyList properties) {
   if constexpr (properties.template has_property<deterministic_key>()) {
@@ -87,7 +72,22 @@ property_list GetReductionPropertyList(PropertyList properties) {
 namespace detail {
 
 template <typename BinaryOperation>
-struct IsDeterministicOperator<ext::oneapi::experimental::detail::DeterministicOperatorWrapper<BinaryOperation>> : std::true_type {};
+struct DeterministicOperatorWrapper {
+
+  DeterministicOperatorWrapper(BinaryOperation BinOp) : BinOp(BinOp) {}
+
+  template <typename... Args>
+  std::invoke_result_t<BinaryOperation, Args...>
+  operator()(Args... args) {
+    return BinOp(std::forward<Args>(args)...);
+  }
+
+  BinaryOperation& BinOp;
+
+};
+
+template <typename BinaryOperation>
+struct IsDeterministicOperator<DeterministicOperatorWrapper<BinaryOperation>> : std::true_type {};
 
 } // namespace detail
 

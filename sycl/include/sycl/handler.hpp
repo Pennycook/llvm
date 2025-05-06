@@ -493,14 +493,70 @@ private:
                                const detail::kernel_param_desc_t *KernelArgs,
                                bool IsESIMD);
 #endif
+  inline constexpr size_t MaxNumAdditionalArgs = 13;
+
   /// Extracts and prepares kernel arguments from the lambda using information
   /// from the built-ins or integration header.
   void extractArgsAndReqsFromLambda(
       char *LambdaPtr, detail::kernel_param_desc_t (*ParamDescGetter)(int),
-      size_t NumKernelParams, bool IsESIMD);
+      size_t NumKernelParams, bool IsESIMD) {
+    size_t IndexShift = 0;
+    impl->MArgs.reserve(MaxNumAdditionalArgs * NumKernelParams);
+
+    for (size_t I = 0; I < NumKernelParams; ++I) {
+      detail::kernel_param_desc_t ParamDesc = ParamDescGetter(I);
+      void *Ptr = LambdaPtr + ParamDesc.offset;
+      const detail::kernel_param_kind_t &Kind = ParamDesc.kind;
+      const int &Size = ParamDesc.info;
+      if (Kind == detail::kernel_param_kind_t::kind_accessor) {
+        // For args kind of accessor Size is information about accessor.
+        // The first 11 bits of Size encodes the accessor target.
+        const access::target AccTarget =
+            static_cast<access::target>(Size & AccessTargetMask);
+        if ((AccTarget == access::target::device ||
+             AccTarget == access::target::constant_buffer) ||
+            (AccTarget == access::target::image ||
+             AccTarget == access::target::image_array)) {
+          detail::AccessorBaseHost *AccBase =
+              static_cast<detail::AccessorBaseHost *>(Ptr);
+          Ptr = detail::getSyclObjImpl(*AccBase).get();
+        } else if (AccTarget == access::target::local) {
+          detail::LocalAccessorBaseHost *LocalAccBase =
+              static_cast<detail::LocalAccessorBaseHost *>(Ptr);
+          Ptr = detail::getSyclObjImpl(*LocalAccBase).get();
+        }
+      }
+      processArg(Ptr, Kind, Size, I, IndexShift,
+                 /*IsKernelCreatedFromSource=*/false, IsESIMD);
+    }
+  }
 
   /// Extracts and prepares kernel arguments set via set_arg(s).
-  void extractArgsAndReqs();
+  void extractArgsAndReqs() {
+    assert(MKernel && "MKernel is not initialized");
+    std::vector<detail::ArgDesc> UnPreparedArgs = std::move(impl->MArgs);
+    clearArgs();
+
+    std::sort(
+        UnPreparedArgs.begin(), UnPreparedArgs.end(),
+        [](const detail::ArgDesc &first, const detail::ArgDesc &second) -> bool {
+          return (first.MIndex < second.MIndex);
+        });
+
+    const bool IsKernelCreatedFromSource = MKernel->isCreatedFromSource();
+    impl->MArgs.reserve(MaxNumAdditionalArgs * UnPreparedArgs.size());
+
+    size_t IndexShift = 0;
+    #pragma unroll
+    for (size_t I = 0; I < UnPreparedArgs.size(); ++I) {
+      void *Ptr = UnPreparedArgs[I].MPtr;
+      const detail::kernel_param_kind_t &Kind = UnPreparedArgs[I].MType;
+      const int &Size = UnPreparedArgs[I].MSize;
+      const int Index = UnPreparedArgs[I].MIndex;
+      processArg(Ptr, Kind, Size, Index, IndexShift, IsKernelCreatedFromSource,
+                 false);
+    }
+  }
 
 #if defined(__INTEL_PREVIEW_BREAKING_CHANGES)
   // TODO: processArg need not to be public
@@ -508,7 +564,160 @@ private:
 #endif
   void processArg(void *Ptr, const detail::kernel_param_kind_t &Kind,
                   const int Size, const size_t Index, size_t &IndexShift,
-                  bool IsKernelCreatedFromSource, bool IsESIMD);
+                  bool IsKernelCreatedFromSource, bool IsESIMD) {
+    using detail::kernel_param_kind_t;
+
+    switch (Kind) {
+    case kernel_param_kind_t::kind_std_layout:
+    case kernel_param_kind_t::kind_pointer: {
+      addArg(Kind, Ptr, Size, Index + IndexShift);
+      break;
+    }
+    case kernel_param_kind_t::kind_stream: {
+      // Stream contains several accessors inside.
+      stream *S = static_cast<stream *>(Ptr);
+
+      detail::AccessorBaseHost *GBufBase =
+          static_cast<detail::AccessorBaseHost *>(&S->GlobalBuf);
+      detail::AccessorImplPtr GBufImpl = detail::getSyclObjImpl(*GBufBase);
+      detail::Requirement *GBufReq = GBufImpl.get();
+      addArgsForGlobalAccessor(
+          GBufReq, Index, IndexShift, Size, IsKernelCreatedFromSource,
+          impl->MNDRDesc.GlobalSize.size(), impl->MArgs, IsESIMD);
+      ++IndexShift;
+      detail::AccessorBaseHost *GOffsetBase =
+          static_cast<detail::AccessorBaseHost *>(&S->GlobalOffset);
+      detail::AccessorImplPtr GOfssetImpl = detail::getSyclObjImpl(*GOffsetBase);
+      detail::Requirement *GOffsetReq = GOfssetImpl.get();
+      addArgsForGlobalAccessor(
+          GOffsetReq, Index, IndexShift, Size, IsKernelCreatedFromSource,
+          impl->MNDRDesc.GlobalSize.size(), impl->MArgs, IsESIMD);
+      ++IndexShift;
+      detail::AccessorBaseHost *GFlushBase =
+          static_cast<detail::AccessorBaseHost *>(&S->GlobalFlushBuf);
+      detail::AccessorImplPtr GFlushImpl = detail::getSyclObjImpl(*GFlushBase);
+      detail::Requirement *GFlushReq = GFlushImpl.get();
+
+      size_t GlobalSize = impl->MNDRDesc.GlobalSize.size();
+      // If work group size wasn't set explicitly then it must be recieved
+      // from kernel attribute or set to default values.
+      // For now we can't get this attribute here.
+      // So we just suppose that WG size is always default for stream.
+      // TODO adjust MNDRDesc when device image contains kernel's attribute
+      if (GlobalSize == 0) {
+        // Suppose that work group size is 1 for every dimension
+        GlobalSize = impl->MNDRDesc.NumWorkGroups.size();
+      }
+      addArgsForGlobalAccessor(GFlushReq, Index, IndexShift, Size,
+                               IsKernelCreatedFromSource, GlobalSize, impl->MArgs,
+                               IsESIMD);
+      ++IndexShift;
+      addArg(kernel_param_kind_t::kind_std_layout, &S->FlushBufferSize,
+             sizeof(S->FlushBufferSize), Index + IndexShift);
+
+      break;
+    }
+    case kernel_param_kind_t::kind_accessor: {
+      // For args kind of accessor Size is information about accessor.
+      // The first 11 bits of Size encodes the accessor target.
+      const access::target AccTarget =
+          static_cast<access::target>(Size & AccessTargetMask);
+      switch (AccTarget) {
+      case access::target::device:
+      case access::target::constant_buffer: {
+        detail::Requirement *AccImpl = static_cast<detail::Requirement *>(Ptr);
+        addArgsForGlobalAccessor(
+            AccImpl, Index, IndexShift, Size, IsKernelCreatedFromSource,
+            impl->MNDRDesc.GlobalSize.size(), impl->MArgs, IsESIMD);
+        break;
+      }
+      case access::target::local: {
+        detail::LocalAccessorImplHost *LAcc =
+            static_cast<detail::LocalAccessorImplHost *>(Ptr);
+
+        range<3> &Size = LAcc->MSize;
+        const int Dims = LAcc->MDims;
+        int SizeInBytes = LAcc->MElemSize;
+        for (int I = 0; I < Dims; ++I)
+          SizeInBytes *= Size[I];
+        // Some backends do not accept zero-sized local memory arguments, so we
+        // make it a minimum allocation of 1 byte.
+        SizeInBytes = std::max(SizeInBytes, 1);
+        impl->MArgs.emplace_back(kernel_param_kind_t::kind_std_layout, nullptr,
+                                 SizeInBytes, Index + IndexShift);
+        // TODO ESIMD currently does not suport MSize field passing yet
+        // accessor::init for ESIMD-mode accessor has a single field, translated
+        // to a single kernel argument set above.
+        if (!IsESIMD && !IsKernelCreatedFromSource) {
+          ++IndexShift;
+          const size_t SizeAccField = (Dims == 0 ? 1 : Dims) * sizeof(Size[0]);
+          addArg(kernel_param_kind_t::kind_std_layout, &Size, SizeAccField,
+                 Index + IndexShift);
+          ++IndexShift;
+          addArg(kernel_param_kind_t::kind_std_layout, &Size, SizeAccField,
+                 Index + IndexShift);
+          ++IndexShift;
+          addArg(kernel_param_kind_t::kind_std_layout, &Size, SizeAccField,
+                 Index + IndexShift);
+        }
+        break;
+      }
+      case access::target::image:
+      case access::target::image_array: {
+        detail::Requirement *AccImpl = static_cast<detail::Requirement *>(Ptr);
+        addArg(Kind, AccImpl, Size, Index + IndexShift);
+        if (!IsKernelCreatedFromSource) {
+          // TODO Handle additional kernel arguments for image class
+          // if the compiler front-end adds them.
+        }
+        break;
+      }
+      case access::target::host_image:
+      case access::target::host_task:
+      case access::target::host_buffer: {
+        throw sycl::exception(make_error_code(errc::invalid),
+                              "Unsupported accessor target case.");
+        break;
+      }
+      }
+      break;
+    }
+    case kernel_param_kind_t::kind_dynamic_work_group_memory: {
+  
+      auto *DynBase = static_cast<
+          ext::oneapi::experimental::detail::dynamic_parameter_base *>(Ptr);
+
+      auto *DynWorkGroupBase = static_cast<
+          ext::oneapi::experimental::detail::dynamic_work_group_memory_base *>(
+          Ptr);
+
+      registerDynamicParameter(*DynBase, Index + IndexShift);
+
+      addArg(kernel_param_kind_t::kind_std_layout, nullptr,
+             DynWorkGroupBase->BufferSize, Index + IndexShift);
+      break;
+    }
+    case kernel_param_kind_t::kind_work_group_memory: {
+      addArg(kernel_param_kind_t::kind_std_layout, nullptr,
+             static_cast<detail::work_group_memory_impl *>(Ptr)->buffer_size,
+             Index + IndexShift);
+      break;
+    }
+    case kernel_param_kind_t::kind_sampler: {
+      addArg(kernel_param_kind_t::kind_sampler, Ptr, sizeof(sampler),
+             Index + IndexShift);
+      break;
+    }
+    case kernel_param_kind_t::kind_specialization_constants_buffer: {
+      addArg(kernel_param_kind_t::kind_specialization_constants_buffer, Ptr, Size,
+             Index + IndexShift);
+      break;
+    }
+    case kernel_param_kind_t::kind_invalid:
+      throw exception(make_error_code(errc::invalid),
+                      "Invalid kernel param kind");
+      break;
+  }
 
   /// \return a string containing name of SYCL kernel.
   detail::ABINeutralKernelNameStrT getKernelName();

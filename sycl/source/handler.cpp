@@ -915,6 +915,7 @@ static void addArgsForGlobalAccessor(detail::Requirement *AccImpl, size_t Index,
   }
 }
 
+#ifndef __INTEL_PREVIEW_BREAKING_CHANGES
 void handler::processArg(void *Ptr, const detail::kernel_param_kind_t &Kind,
                          const int Size, const size_t Index, size_t &IndexShift,
                          bool IsKernelCreatedFromSource, bool IsESIMD) {
@@ -1072,6 +1073,7 @@ void handler::processArg(void *Ptr, const detail::kernel_param_kind_t &Kind,
     break;
   }
 }
+#endif
 
 void handler::setArgHelper(int ArgIndex, detail::work_group_memory_impl &Arg) {
   impl->MWorkGroupMemoryObjects.push_back(
@@ -1093,6 +1095,7 @@ void handler::setArgHelper(
   registerDynamicParameter(DynWorkGroupBase, ArgIndex);
 }
 
+#ifndef __INTEL_PREVIEW_BREAKING_CHANGES
 // The argument can take up more space to store additional information about
 // MAccessRange, MMemoryRange, and MOffset added with addArgsForGlobalAccessor.
 // We use the worst-case estimate because the lifetime of the vector is short.
@@ -1161,6 +1164,7 @@ void handler::extractArgsAndReqsFromLambda(
                /*IsKernelCreatedFromSource=*/false, IsESIMD);
   }
 }
+#endif
 
 #ifndef __INTEL_PREVIEW_BREAKING_CHANGES
 // TODO: Those functions are not used anymore, remove it in the next
